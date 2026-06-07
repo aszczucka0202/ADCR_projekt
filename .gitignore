@@ -1,0 +1,25 @@
+﻿# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+rta_env/
+
+# Srodowisko / sekrety
+.env
+
+# Dane gromadzone i modele (generowane lokalnie)
+data/
+*.parquet
+*.pkl
+*.joblib
+*.log
+
+# Notatniki
+.ipynb_checkpoints/
+
+# IDE / system
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
