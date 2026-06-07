@@ -1,26 +1,36 @@
 # JSON contract POGODA 
 {
   "station_id": "IMGW_126300",
+  "measurement_timestamp": "2026-03-20T10:00:00Z",
   "temperature": 14.5,
   "humidity": 65,
-  "wind_speed": 12,
+  "pressure_hpa": 1008.3,
+  "wind_speed": 12.0,
   "ingestion_timestamp": "2026-03-20T10:05:00Z"
 }
 
 # JSON contract WODA 
 {
   "gauge_id": "H_442",
+  "measurement_timestamp": "2026-03-20T10:00:00Z",
   "water_level_cm": 245,
-  "is_warning": false,
   "flow_m3s": 12.5,
+  "is_warning": false,
   "ingestion_timestamp": "2026-03-20T10:05:00Z"
 }
 
 # JSON contract ALERTY 
 {
   "alert_id": "WAR_009",
+  "alert_type": "storm",
+  "source": "spark-weather",
+  "station_id": "IMGW_126300",
+  "lat": 51.10,
+  "lon": 17.03,
   "severity": "Yellow",
-  "msg": "Gęsta mgła w dolinach",
+  "msg": "Spadek ciśnienia 9 hPa/3h — ryzyko wichury",
+  "value": 9.0,
+  "event_timestamp": "2026-03-20T10:05:00Z",
   "expires": "2026-03-21T00:00:00Z",
   "ingestion_timestamp": "2026-03-20T10:05:00Z"
 }
