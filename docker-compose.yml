@@ -1,34 +1,19 @@
-# ============================================================================
-#  RTA 2026 - Projekt grupowy: Analiza strumieniowa danych IMGW
-#  Plik orkiestracji - WŁAŚCICIEL: Osoba 1 (Lider / DevOps / Integracja)
-# ----------------------------------------------------------------------------
-#  Konwencja sieci wewnętrznej (zgodna z labami kursu):
-#    - WEWNĄTRZ kontenerów (producer, spark, dashboard) łączymy się z Kafką
-#      pod adresem:        broker:9092
-#    - Z HOSTA (Twój laptop, np. debug z terminala) pod adresem:  localhost:29092
-#
-#  Szybki start (sama infrastruktura, do testów Lidera):
-#    docker compose up -d broker kafka-init kafka-ui postgres spark-master spark-worker
-#  Pełny stack (gdy zespół doda swoje serwisy):
-#    docker compose up -d
-# ============================================================================
+﻿# RTA 2026 - docker-compose (infrastruktura). Wlasciciel: Osoba 1.
+# Kafka wewnatrz sieci: broker:9092 | z hosta: localhost:29092
+# Spark: bez osobnego klastra - Osoby 3 i 4 uruchamiaja joby w trybie local[*].
 
 services:
 
-  # ---------------------------------------------------------------------------
-  # KAFKA (tryb KRaft - bez Zookeepera, jeden broker w zupełności wystarczy)
-  # ---------------------------------------------------------------------------
   broker:
     image: confluentinc/cp-kafka:7.6.1
     hostname: broker
     container_name: broker
     ports:
-      - "29092:29092"          # dostęp z hosta (debug): localhost:29092
+      - "29092:29092"
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: "broker,controller"
       KAFKA_CONTROLLER_QUORUM_VOTERS: "1@broker:29093"
-      # Trzy listenery: INTERNAL (dla kontenerów), EXTERNAL (dla hosta), CONTROLLER (KRaft)
       KAFKA_LISTENERS: "INTERNAL://broker:9092,CONTROLLER://broker:29093,EXTERNAL://0.0.0.0:29092"
       KAFKA_ADVERTISED_LISTENERS: "INTERNAL://broker:9092,EXTERNAL://localhost:29092"
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT"
@@ -38,8 +23,8 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"   # topiki tworzymy świadomie w kafka-init
-      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"        # dowolny stały identyfikator klastra KRaft
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
     volumes:
       - kafka-data:/var/lib/kafka/data
     healthcheck:
@@ -48,9 +33,6 @@ services:
       timeout: 10s
       retries: 10
 
-  # ---------------------------------------------------------------------------
-  # INICJALIZACJA TOPIKÓW - tworzy synop / hydro / alerts i kończy działanie
-  # ---------------------------------------------------------------------------
   kafka-init:
     image: confluentinc/cp-kafka:7.6.1
     depends_on:
@@ -62,15 +44,11 @@ services:
       kafka-topics --bootstrap-server broker:9092 --create --if-not-exists --topic synop  --partitions 3 --replication-factor 1
       kafka-topics --bootstrap-server broker:9092 --create --if-not-exists --topic hydro  --partitions 3 --replication-factor 1
       kafka-topics --bootstrap-server broker:9092 --create --if-not-exists --topic alerts --partitions 3 --replication-factor 1
-      echo '----- Utworzone topiki: -----'
+      echo 'Utworzone topiki:'
       kafka-topics --bootstrap-server broker:9092 --list
       "
     restart: "no"
 
-  # ---------------------------------------------------------------------------
-  # KAFKA UI - panel do podglądu topików/wiadomości (bardzo pomaga przy debugu)
-  #   http://localhost:8080
-  # ---------------------------------------------------------------------------
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
@@ -84,10 +62,6 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: broker:9092
       DYNAMIC_CONFIG_ENABLED: "true"
 
-  # ---------------------------------------------------------------------------
-  # POSTGRES - magazyn danych historycznych i modelu (Osoba 5)
-  #   z hosta: localhost:5432
-  # ---------------------------------------------------------------------------
   postgres:
     image: postgres:16
     container_name: postgres
@@ -99,7 +73,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-rta_db}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      # Po dostarczeniu skryptu przez Osobę 5 odkomentuj poniższą linię:
       # - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rta} -d ${POSTGRES_DB:-rta_db}"]
@@ -107,93 +80,11 @@ services:
       timeout: 5s
       retries: 5
 
-  # ---------------------------------------------------------------------------
-  # SPARK - klaster standalone (master + worker) dla jobów Osób 3 i 4
-  #   UI mastera: http://localhost:8081
-  # ---------------------------------------------------------------------------
-  spark-master:
-    image: bitnami/spark:3.5.1
-    container_name: spark-master
-    environment:
-      SPARK_MODE: master
-    ports:
-      - "8081:8080"            # Spark Master Web UI
-      - "7077:7077"            # zgłaszanie jobów (spark://spark-master:7077)
-
-  spark-worker:
-    image: bitnami/spark:3.5.1
-    container_name: spark-worker
-    depends_on:
-      - spark-master
-    environment:
-      SPARK_MODE: worker
-      SPARK_MASTER_URL: spark://spark-master:7077
-      SPARK_WORKER_MEMORY: 2G
-      SPARK_WORKER_CORES: 2
-
-  # ===========================================================================
-  #  SERWISY ZESPOŁU - każda osoba dostarcza Dockerfile w swoim katalogu,
-  #  a następnie odkomentowuje swój blok. Adresy/interfejsy są już ustalone.
-  # ===========================================================================
-
-  # --- Osoba 2: Producent IMGW -> Kafka --------------------------------------
-  # producer:
-  #   build: ./producer
-  #   container_name: producer
-  #   depends_on:
-  #     broker: { condition: service_healthy }
-  #     kafka-init: { condition: service_completed_successfully }
-  #   environment:
-  #     KAFKA_BOOTSTRAP: broker:9092
-  #     SYNOP_TOPIC: synop
-  #     HYDRO_TOPIC: hydro
-  #     POLL_INTERVAL_SECONDS: 600
-  #   restart: unless-stopped
-
-  # --- Osoba 3: Spark - pogoda / wichury -------------------------------------
-  # spark-weather:
-  #   build: ./spark-weather
-  #   container_name: spark-weather
-  #   depends_on:
-  #     - spark-master
-  #     - broker
-  #   environment:
-  #     KAFKA_BOOTSTRAP: broker:9092
-  #     SOURCE_TOPIC: synop
-  #     ALERTS_TOPIC: alerts
-  #     SPARK_MASTER_URL: spark://spark-master:7077
-  #   # Job startuje przez spark-submit z pakietem konektora Kafki, np.:
-  #   #   --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1
-
-  # --- Osoba 4: Spark - hydrologia / podtopienia -----------------------------
-  # spark-hydro:
-  #   build: ./spark-hydro
-  #   container_name: spark-hydro
-  #   depends_on:
-  #     - spark-master
-  #     - broker
-  #   environment:
-  #     KAFKA_BOOTSTRAP: broker:9092
-  #     SOURCE_TOPIC: hydro
-  #     ALERTS_TOPIC: alerts
-  #     SPARK_MASTER_URL: spark://spark-master:7077
-
-  # --- Osoba 6: Dashboard / BI -----------------------------------------------
-  # dashboard:
-  #   build: ./dashboard
-  #   container_name: dashboard
-  #   depends_on:
-  #     broker: { condition: service_healthy }
-  #     postgres: { condition: service_healthy }
-  #   environment:
-  #     KAFKA_BOOTSTRAP: broker:9092
-  #     ALERTS_TOPIC: alerts
-  #     POSTGRES_HOST: postgres
-  #     POSTGRES_DB: ${POSTGRES_DB:-rta_db}
-  #     POSTGRES_USER: ${POSTGRES_USER:-rta}
-  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rta_pass}
-  #   ports:
-  #     - "8501:8501"          # np. Streamlit
+  # ===== SERWISY ZESPOLU (kazda osoba odkomentowuje swoj blok) =====
+  # producer:        build: ./producer        | env: KAFKA_BOOTSTRAP=broker:9092, SYNOP_TOPIC=synop, HYDRO_TOPIC=hydro
+  # spark-weather:   build: ./spark-weather   | env: KAFKA_BOOTSTRAP=broker:9092, SOURCE_TOPIC=synop,  ALERTS_TOPIC=alerts | spark-submit --master local[*] --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1
+  # spark-hydro:     build: ./spark-hydro     | env: KAFKA_BOOTSTRAP=broker:9092, SOURCE_TOPIC=hydro,  ALERTS_TOPIC=alerts
+  # dashboard:       build: ./dashboard       | env: KAFKA_BOOTSTRAP=broker:9092, ALERTS_TOPIC=alerts, POSTGRES_HOST=postgres | port 8501:8501
 
 volumes:
   kafka-data:
