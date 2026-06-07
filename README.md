@@ -1,83 +1,41 @@
-# JSON contract POGODA 
-{
-  "station_id": "IMGW_126300",
-  "measurement_timestamp": "2026-03-20T10:00:00Z",
-  "temperature": 14.5,
-  "humidity": 65,
-  "pressure_hpa": 1008.3,
-  "wind_speed": 12.0,
-  "ingestion_timestamp": "2026-03-20T10:05:00Z"
-}
+﻿# Projekt RTA 2026 - Analiza strumieniowa danych IMGW
 
-# JSON contract WODA 
-{
-  "gauge_id": "H_442",
-  "measurement_timestamp": "2026-03-20T10:00:00Z",
-  "water_level_cm": 245,
-  "flow_m3s": 12.5,
-  "is_warning": false,
-  "ingestion_timestamp": "2026-03-20T10:05:00Z"
-}
+Potok danych w czasie rzeczywistym: dane meteo i hydro z API IMGW -> Kafka ->
+Spark (wichury, podtopienia) -> alerty + magazyn historyczny + dashboard.
 
-# JSON contract ALERTY 
-{
-  "alert_id": "WAR_009",
-  "alert_type": "storm",
-  "source": "spark-weather",
-  "station_id": "IMGW_126300",
-  "lat": 51.10,
-  "lon": 17.03,
-  "severity": "Yellow",
-  "msg": "Spadek ciśnienia 9 hPa/3h — ryzyko wichury",
-  "value": 9.0,
-  "event_timestamp": "2026-03-20T10:05:00Z",
-  "expires": "2026-03-21T00:00:00Z",
-  "ingestion_timestamp": "2026-03-20T10:05:00Z"
-}
+## Dokumentacja
+- CONTRACTS.md  - format wiadomosci Kafki (ZAMROZONY)
+- ONBOARDING.md - jak podlaczyc swoj modul
 
+## Architektura
+IMGW API
+  -> producer            (Osoba 2)
+  -> Kafka: synop, hydro
+       -> spark-weather  (Osoba 3) -> Kafka: alerts
+       -> spark-hydro    (Osoba 4) -> Kafka: alerts
+       -> Postgres       (Osoba 5: historia + model)
+  -> dashboard           (Osoba 6: mapa, wykresy, panel alertow)
 
+## Jak postawic od zera
+Wymagania: Docker Desktop, Git.
+1. git clone https://github.com/aszczucka0202/ADCR_projekt.git
+2. cd ADCR_projekt
+3. (opcjonalnie) skopiuj .env.example do .env i ustaw wlasne haslo Postgresa
+4. docker compose up -d
+5. docker compose ps           # broker powinien byc "healthy"
+6. Otworz http://localhost:8080 - w Kafka UI beda topiki: synop, hydro, alerts
 
+## Adresy
+- Kafka z kontenera:  broker:9092   | z hosta: localhost:29092
+- Postgres:           postgres:5432 | z hosta: localhost:5432
+- Kafka UI:           http://localhost:8080
+- Dashboard:          http://localhost:8501
 
+## Zatrzymanie
+docker compose stop        # pauza, zachowuje wszystko
+docker compose down        # usuwa kontenery, ZACHOWUJE dane
+docker compose down -v     # czysty reset (USUWA dane)
 
-# Projekt Grupowy - Analiza Strumieniowa Danych IMGW (RTA 2026)
-
-Celem projektu jest zbudowanie kompletnego potoku przetwarzania danych w czasie rzeczywistym (Real-Time Data Pipeline) opartego o dane meteorologiczne i hydrologiczne z publicznego API IMGW ([https://danepubliczne.imgw.pl/pl/apiinfo](https://danepubliczne.imgw.pl/pl/apiinfo)). System ma za zadanie wykrywać anomalie pogodowe (wichury) oraz zagrożenia hydrologiczne (podtopienia), zapisywać dane historyczne, generować modele predykcyjne oraz wizualizować stan alertów na żywo.
-
----
-
-## 🛠️ Architektura i Podział Zadań w Zespole
-
-Projekt wykorzystuje architekturę mikroserwisów uruchamianych za pomocą technologii Docker. Poniżej znajduje się podział odpowiedzialności wraz z przypisanymi katalogami w repozytorium:
-
-* **Osoba 1 (Lider / DevOps / Integracja) — [Twoje Imię/Nick]**
-    * *Odpowiedzialność:* Zarządzanie repozytorium, koordynacja prac, przygotowanie środowiska `docker-compose.yml` (Kafka, Spark, Postgres, Dashboard) oraz dokumentacji uruchomieniowej.
-    * *Pliki:* Główny katalog, `docker-compose.yml`, `README.md`.
-* **Osoba 2 (Producent danych: IMGW → Kafka)**
-    * *Odpowiedzialność:* Serwis w Pythonie odpytujący API IMGW co ~10 minut, deduplikacja odczytów (klucz: `id_stacji` + `data_pomiaru`), obsługa błędów, wysyłka na topiki Kafki.
-    * *Katalog:* `/producer`
-* **Osoba 3 (Przetwarzanie strumieniowe: Pogoda / Wichury)**
-    * *Odpowiedzialność:* Job Spark Structured Streaming analizujący topik synoptyczny. Detekcja spadków ciśnienia w oknach czasowych, wykrywanie silnego wiatru. Wysyłka alertów na topik `alerts`.
-    * *Katalog:* `/spark-weather`
-* **Osoba 4 (Przetwarzanie strumieniowe: Hydrologia / Podtopienia)**
-    * *Odpowiedzialność:* Job Spark Structured Streaming analizujący topik hydrologiczny. Trend poziomu wód w oknach czasowych, porównanie z progami ostrzegawczymi/alarmowymi. Wysyłka alertów na topik `alerts`.
-    * *Katalog:* `/spark-hydro`
-* **Osoba 5 (Warstwa danych i model predykcyjny)**
-    * *Odpowiedzialność:* Zapis danych historycznych do bazy (Postgres/Parquet). Budowa modelu predykcyjnego (np. prognoza poziomu rzeki na kolejne godziny na podstawie szeregów czasowych).
-    * *Katalog:* `/database`
-* **Osoba 6 (BI, Wizualizacja i Alerty końcowe)**
-    * *Odpowiedzialność:* Dashboard (Grafana/Streamlit) prezentujący mapę stacji, wykresy parametrów oraz panel aktywnych ostrzeżeń pobieranych z topiku `alerts`.
-    * *Katalog:* `/dashboard`
-
----
-
-## 📂 Struktura Repozytorium (Monorepo)
-
-```text
-ADCR_projekt/
-├── dashboard/          # Kod źródłowy panelu wizualizacyjnego (Osoba 6)
-├── database/           # Skrypty bazy danych i modele predykcyjne (Osoba 5)
-├── producer/           # Kod źródłowy producenta danych w Pythonie (Osoba 2)
-├── spark-hydro/        # Analiza strumieniowa - hydrologia (Osoba 4)
-├── spark-weather/      # Analiza strumieniowa - pogoda (Osoba 3)
-├── docker-compose.yml  # Główny plik orkiestracji usług (Osoba 1)
-└── README.md           # Dokumentacja projektu
+## Praca w zespole
+Kazdy pracuje w swoim katalogu na galezi feat/<modul> i scala do main.
+Plik docker-compose.yml prowadzi Lider - zglos mu gotowy modul do podlaczenia.
