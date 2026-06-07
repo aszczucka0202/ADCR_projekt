@@ -40,8 +40,8 @@ services:
       - rta_network
 
   # 3. SPARK MASTER (Serce obliczeniowe dla Osób 3 i 4)
-  spark-master:3.5.1
-    image: bitnami/spark:
+  spark-master:
+    image: bitnami/spark:3.5.1
     container_name: rta_spark_master
     environment:
       - SPARK_MODE=master
