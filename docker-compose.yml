@@ -1,86 +1,200 @@
-version: '3.8'
-
-# Definiujemy wspólną sieć, żeby kontenery (maszyny) mogły ze sobą "rozmawiać"
-networks:
-  rta_network:
-    driver: bridge
+# ============================================================================
+#  RTA 2026 - Projekt grupowy: Analiza strumieniowa danych IMGW
+#  Plik orkiestracji - WŁAŚCICIEL: Osoba 1 (Lider / DevOps / Integracja)
+# ----------------------------------------------------------------------------
+#  Konwencja sieci wewnętrznej (zgodna z labami kursu):
+#    - WEWNĄTRZ kontenerów (producer, spark, dashboard) łączymy się z Kafką
+#      pod adresem:        broker:9092
+#    - Z HOSTA (Twój laptop, np. debug z terminala) pod adresem:  localhost:29092
+#
+#  Szybki start (sama infrastruktura, do testów Lidera):
+#    docker compose up -d broker kafka-init kafka-ui postgres spark-master spark-worker
+#  Pełny stack (gdy zespół doda swoje serwisy):
+#    docker compose up -d
+# ============================================================================
 
 services:
-  # 1. BAZA DANYCH (Dla Osoby 5)
-  postgres:
-    image: postgres:15
-    container_name: rta_postgres
+
+  # ---------------------------------------------------------------------------
+  # KAFKA (tryb KRaft - bez Zookeepera, jeden broker w zupełności wystarczy)
+  # ---------------------------------------------------------------------------
+  broker:
+    image: confluentinc/cp-kafka:7.6.1
+    hostname: broker
+    container_name: broker
+    ports:
+      - "29092:29092"          # dostęp z hosta (debug): localhost:29092
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: adminpassword
-      POSTGRES_DB: rta_database
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@broker:29093"
+      # Trzy listenery: INTERNAL (dla kontenerów), EXTERNAL (dla hosta), CONTROLLER (KRaft)
+      KAFKA_LISTENERS: "INTERNAL://broker:9092,CONTROLLER://broker:29093,EXTERNAL://0.0.0.0:29092"
+      KAFKA_ADVERTISED_LISTENERS: "INTERNAL://broker:9092,EXTERNAL://localhost:29092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "INTERNAL"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"   # topiki tworzymy świadomie w kafka-init
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"        # dowolny stały identyfikator klastra KRaft
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "broker:9092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # INICJALIZACJA TOPIKÓW - tworzy synop / hydro / alerts i kończy działanie
+  # ---------------------------------------------------------------------------
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      broker:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command: |
+      "
+      kafka-topics --bootstrap-server broker:9092 --create --if-not-exists --topic synop  --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server broker:9092 --create --if-not-exists --topic hydro  --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server broker:9092 --create --if-not-exists --topic alerts --partitions 3 --replication-factor 1
+      echo '----- Utworzone topiki: -----'
+      kafka-topics --bootstrap-server broker:9092 --list
+      "
+    restart: "no"
+
+  # ---------------------------------------------------------------------------
+  # KAFKA UI - panel do podglądu topików/wiadomości (bardzo pomaga przy debugu)
+  #   http://localhost:8080
+  # ---------------------------------------------------------------------------
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      broker:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: rta-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: broker:9092
+      DYNAMIC_CONFIG_ENABLED: "true"
+
+  # ---------------------------------------------------------------------------
+  # POSTGRES - magazyn danych historycznych i modelu (Osoba 5)
+  #   z hosta: localhost:5432
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16
+    container_name: postgres
     ports:
       - "5432:5432"
-    networks:
-      - rta_network
-    restart: always
-
-  # 2. KAFKA (Dla Osób 2, 3, 4) - Używamy trybu KRaft (bez Zookeepera), żeby oszczędzić Twój RAM
-  kafka:
-    image: apache/kafka:latest
-    container_name: rta_kafka
     environment:
-      - KAFKA_ENABLE_KRAFT=yes
-      - KAFKA_CFG_PROCESS_ROLES=broker,controller
-      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
-      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
-      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
-      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
-      - KAFKA_BROKER_ID=1
-      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
-      - ALLOW_PLAINTEXT_LISTENER=yes
-    ports:
-      - "9092:9092"
-    networks:
-      - rta_network
+      POSTGRES_USER: ${POSTGRES_USER:-rta}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rta_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-rta_db}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Po dostarczeniu skryptu przez Osobę 5 odkomentuj poniższą linię:
+      # - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rta} -d ${POSTGRES_DB:-rta_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # 3. SPARK MASTER (Serce obliczeniowe dla Osób 3 i 4)
+  # ---------------------------------------------------------------------------
+  # SPARK - klaster standalone (master + worker) dla jobów Osób 3 i 4
+  #   UI mastera: http://localhost:8081
+  # ---------------------------------------------------------------------------
   spark-master:
-    image: apache/spark:3.4.1
-    container_name: rta_spark_master
+    image: bitnami/spark:3.5.1
+    container_name: spark-master
     environment:
-      - SPARK_MODE=master
-      - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      - SPARK_RPC_ENCRYPTION_ENABLED=no
-      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
-      - SPARK_SSL_ENABLED=no
+      SPARK_MODE: master
     ports:
-      - "8080:8080" # Panel WWW do podglądu zadań Sparka
-      - "7077:7077" # Wewnętrzny port komunikacyjny
-    networks:
-      - rta_network
+      - "8081:8080"            # Spark Master Web UI
+      - "7077:7077"            # zgłaszanie jobów (spark://spark-master:7077)
 
-  # 4. SPARK WORKER (Robotnik, który wykonuje właściwą pracę)
   spark-worker:
-    image: apache/spark:3.4.1
-    container_name: rta_spark_worker
-    environment:
-      - SPARK_MODE=worker
-      - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_WORKER_MEMORY=1G
-      - SPARK_WORKER_CORES=1
-      - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      - SPARK_RPC_ENCRYPTION_ENABLED=no
-      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
-      - SPARK_SSL_ENABLED=no
+    image: bitnami/spark:3.5.1
+    container_name: spark-worker
     depends_on:
       - spark-master
-    networks:
-      - rta_network
+    environment:
+      SPARK_MODE: worker
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_WORKER_MEMORY: 2G
+      SPARK_WORKER_CORES: 2
 
-  # -----------------------------------------------------------------------
-  # MIEJSCE NA KOD ZESPOŁU (Zostawiamy to zakomentowane, dodamy w Fazie 3)
-  # -----------------------------------------------------------------------
-  
+  # ===========================================================================
+  #  SERWISY ZESPOŁU - każda osoba dostarcza Dockerfile w swoim katalogu,
+  #  a następnie odkomentowuje swój blok. Adresy/interfejsy są już ustalone.
+  # ===========================================================================
+
+  # --- Osoba 2: Producent IMGW -> Kafka --------------------------------------
   # producer:
   #   build: ./producer
-  #   ...
-  
+  #   container_name: producer
+  #   depends_on:
+  #     broker: { condition: service_healthy }
+  #     kafka-init: { condition: service_completed_successfully }
+  #   environment:
+  #     KAFKA_BOOTSTRAP: broker:9092
+  #     SYNOP_TOPIC: synop
+  #     HYDRO_TOPIC: hydro
+  #     POLL_INTERVAL_SECONDS: 600
+  #   restart: unless-stopped
+
+  # --- Osoba 3: Spark - pogoda / wichury -------------------------------------
+  # spark-weather:
+  #   build: ./spark-weather
+  #   container_name: spark-weather
+  #   depends_on:
+  #     - spark-master
+  #     - broker
+  #   environment:
+  #     KAFKA_BOOTSTRAP: broker:9092
+  #     SOURCE_TOPIC: synop
+  #     ALERTS_TOPIC: alerts
+  #     SPARK_MASTER_URL: spark://spark-master:7077
+  #   # Job startuje przez spark-submit z pakietem konektora Kafki, np.:
+  #   #   --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1
+
+  # --- Osoba 4: Spark - hydrologia / podtopienia -----------------------------
+  # spark-hydro:
+  #   build: ./spark-hydro
+  #   container_name: spark-hydro
+  #   depends_on:
+  #     - spark-master
+  #     - broker
+  #   environment:
+  #     KAFKA_BOOTSTRAP: broker:9092
+  #     SOURCE_TOPIC: hydro
+  #     ALERTS_TOPIC: alerts
+  #     SPARK_MASTER_URL: spark://spark-master:7077
+
+  # --- Osoba 6: Dashboard / BI -----------------------------------------------
   # dashboard:
   #   build: ./dashboard
-  #   ...
+  #   container_name: dashboard
+  #   depends_on:
+  #     broker: { condition: service_healthy }
+  #     postgres: { condition: service_healthy }
+  #   environment:
+  #     KAFKA_BOOTSTRAP: broker:9092
+  #     ALERTS_TOPIC: alerts
+  #     POSTGRES_HOST: postgres
+  #     POSTGRES_DB: ${POSTGRES_DB:-rta_db}
+  #     POSTGRES_USER: ${POSTGRES_USER:-rta}
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rta_pass}
+  #   ports:
+  #     - "8501:8501"          # np. Streamlit
+
+volumes:
+  kafka-data:
+  postgres-data:
