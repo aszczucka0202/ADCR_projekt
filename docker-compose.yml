@@ -22,7 +22,7 @@ services:
 
   # 2. KAFKA (Dla Osób 2, 3, 4) - Używamy trybu KRaft (bez Zookeepera), żeby oszczędzić Twój RAM
   kafka:
-    image: bitnami/kafka:3.4
+    image: bitnami/kafka:latest
     container_name: rta_kafka
     environment:
       - KAFKA_ENABLE_KRAFT=yes
@@ -41,7 +41,7 @@ services:
 
   # 3. SPARK MASTER (Serce obliczeniowe dla Osób 3 i 4)
   spark-master:
-    image: bitnami/spark:3.4
+    image: bitnami/spark:latest
     container_name: rta_spark_master
     environment:
       - SPARK_MODE=master
@@ -57,7 +57,7 @@ services:
 
   # 4. SPARK WORKER (Robotnik, który wykonuje właściwą pracę)
   spark-worker:
-    image: bitnami/spark:3.4
+    image: bitnami/spark:latest
     container_name: rta_spark_worker
     environment:
       - SPARK_MODE=worker
