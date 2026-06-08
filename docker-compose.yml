@@ -1,6 +1,5 @@
 ﻿# RTA 2026 - docker-compose (infrastruktura). Wlasciciel: Osoba 1.
-# Kafka wewnatrz sieci: broker:9092 | z hosta: localhost:29092
-# Spark: bez osobnego klastra - Osoby 3 i 4 uruchamiaja joby w trybie local[*].
+# Kafka w sieci: broker:9092 | z hosta: localhost:29092. Spark: tryb local[*].
 
 services:
 
@@ -73,18 +72,28 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-rta_db}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      # - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rta} -d ${POSTGRES_DB:-rta_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # ===== SERWISY ZESPOLU (kazda osoba odkomentowuje swoj blok) =====
-  # producer:        build: ./producer        | env: KAFKA_BOOTSTRAP=broker:9092, SYNOP_TOPIC=synop, HYDRO_TOPIC=hydro
-  # spark-weather:   build: ./spark-weather   | env: KAFKA_BOOTSTRAP=broker:9092, SOURCE_TOPIC=synop,  ALERTS_TOPIC=alerts | spark-submit --master local[*] --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1
-  # spark-hydro:     build: ./spark-hydro     | env: KAFKA_BOOTSTRAP=broker:9092, SOURCE_TOPIC=hydro,  ALERTS_TOPIC=alerts
-  # dashboard:       build: ./dashboard       | env: KAFKA_BOOTSTRAP=broker:9092, ALERTS_TOPIC=alerts, POSTGRES_HOST=postgres | port 8501:8501
+  producer:
+    build: ./producer
+    container_name: producer
+    depends_on:
+      broker:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP: broker:9092
+    restart: unless-stopped
+
+  # ===== POZOSTALE SERWISY ZESPOLU (odkomentuj, gdy gotowe) =====
+  # spark-weather:  build: ./spark-weather  | env KAFKA_BOOTSTRAP=broker:9092, SOURCE_TOPIC=synop, ALERTS_TOPIC=alerts
+  # spark-hydro:    build: ./spark-hydro    | env KAFKA_BOOTSTRAP=broker:9092, SOURCE_TOPIC=hydro, ALERTS_TOPIC=alerts
+  # dashboard:      build: ./dashboard      | env KAFKA_BOOTSTRAP=broker:9092, ALERTS_TOPIC=alerts, POSTGRES_HOST=postgres | port 8501:8501
 
 volumes:
   kafka-data:

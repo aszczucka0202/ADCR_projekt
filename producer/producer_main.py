@@ -1,3 +1,4 @@
+﻿import os
 import requests
 from datetime import datetime, timezone
 from kafka import KafkaProducer
@@ -46,9 +47,9 @@ def fetch_synop():
 
         except Exception as e:
             print()
-            print("BŁĘDNY REKORD:")
+            print("BĹÄDNY REKORD:")
             print(record)
-            print("Błąd:", e)
+            print("BĹ‚Ä…d:", e)
             print()
     return messages
 
@@ -90,7 +91,7 @@ def fetch_hydro():
             messages.append(message)
 
         except Exception as e:
-            print("Błąd rekordu hydro:", e)
+            print("BĹ‚Ä…d rekordu hydro:", e)
 
     return messages
 def run_once():
@@ -98,7 +99,7 @@ def run_once():
 
     synop_data = fetch_synop()
 
-    print("Liczba rekordów synop:", len(synop_data))
+    print("Liczba rekordĂłw synop:", len(synop_data))
 
     sent_synop = 0
 
@@ -126,11 +127,11 @@ def run_once():
 
     producer.flush()
 
-    print(f"Wysłano nowych rekordów synop: {sent_synop}")
+    print(f"WysĹ‚ano nowych rekordĂłw synop: {sent_synop}")
 
     hydro_data = fetch_hydro()
 
-    print("Liczba rekordów hydro:", len(hydro_data))
+    print("Liczba rekordĂłw hydro:", len(hydro_data))
 
     sent_hydro = 0
 
@@ -158,12 +159,12 @@ def run_once():
 
     producer.flush()
 
-    print(f"Wysłano nowych rekordów hydro: {sent_hydro}")
+    print(f"WysĹ‚ano nowych rekordĂłw hydro: {sent_hydro}")
 seen_synop = load_seen("seen_synop.txt")
 seen_hydro = load_seen("seen_hydro.txt")
 
 producer = KafkaProducer(
-    bootstrap_servers="localhost:29092",
+    bootstrap_servers=os.environ.get("KAFKA_BOOTSTRAP", "localhost:29092"),
     value_serializer=lambda v: json.dumps(v).encode("utf-8"),
     key_serializer=lambda k: k.encode("utf-8")
 )
@@ -174,7 +175,7 @@ while True:
         run_once()
 
     except Exception as e:
-        print("Błąd podczas działania producenta:", e)
+        print("BĹ‚Ä…d podczas dziaĹ‚ania producenta:", e)
 
-    print("Czekam 10 minut do następnego pobrania...")
+    print("Czekam 10 minut do nastÄ™pnego pobrania...")
     time.sleep(600)
