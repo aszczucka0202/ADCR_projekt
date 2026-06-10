@@ -90,6 +90,21 @@ services:
       KAFKA_BOOTSTRAP: broker:9092
     restart: unless-stopped
 
+    spark-weather:
+    build: ./spark-weather
+    container_name: spark-weather
+    depends_on:
+      broker:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP: broker:9092
+      SOURCE_TOPIC: synop
+      ALERTS_TOPIC: alerts
+      STATIONS_CSV: /app/stations_weather.csv
+    restart: unless-stopped
+
   # ===== POZOSTALE SERWISY ZESPOLU (odkomentuj, gdy gotowe) =====
   # spark-weather:  build: ./spark-weather  | env KAFKA_BOOTSTRAP=broker:9092, SOURCE_TOPIC=synop, ALERTS_TOPIC=alerts
   # spark-hydro:    build: ./spark-hydro    | env KAFKA_BOOTSTRAP=broker:9092, SOURCE_TOPIC=hydro, ALERTS_TOPIC=alerts
