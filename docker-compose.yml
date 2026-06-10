@@ -109,6 +109,21 @@ services:
   # spark-hydro:  build: ./spark-hydro  | env KAFKA_BOOTSTRAP=broker:9092, SOURCE_TOPIC=hydro, ALERTS_TOPIC=alerts
   # dashboard:    build: ./dashboard    | env KAFKA_BOOTSTRAP=broker:9092, ALERTS_TOPIC=alerts, POSTGRES_HOST=postgres | port 8501:8501
 
+  spark-hydro:
+    build: ./spark-hydro
+    container_name: spark-hydro
+    depends_on:
+      broker:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP: broker:9092
+      SOURCE_TOPIC: hydro
+      ALERTS_TOPIC: alerts
+      STATIONS_CSV: /app/stations_hydro.csv
+    restart: unless-stopped
 volumes:
   kafka-data:
   postgres-data:
+
