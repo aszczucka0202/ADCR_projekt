@@ -1,5 +1,5 @@
 ﻿# RTA 2026 - docker-compose (infrastruktura). Wlasciciel: Osoba 1.
-# Kafka w sieci: broker:9092 | z hosta: localhost:29092. Spark: tryb local[*].
+# Kafka w sieci: broker:9092 | z hosta: localhost:29092.
 
 services:
 
@@ -90,7 +90,7 @@ services:
       KAFKA_BOOTSTRAP: broker:9092
     restart: unless-stopped
 
-    spark-weather:
+  spark-weather:
     build: ./spark-weather
     container_name: spark-weather
     depends_on:
@@ -105,10 +105,9 @@ services:
       STATIONS_CSV: /app/stations_weather.csv
     restart: unless-stopped
 
-  # ===== POZOSTALE SERWISY ZESPOLU (odkomentuj, gdy gotowe) =====
-  # spark-weather:  build: ./spark-weather  | env KAFKA_BOOTSTRAP=broker:9092, SOURCE_TOPIC=synop, ALERTS_TOPIC=alerts
-  # spark-hydro:    build: ./spark-hydro    | env KAFKA_BOOTSTRAP=broker:9092, SOURCE_TOPIC=hydro, ALERTS_TOPIC=alerts
-  # dashboard:      build: ./dashboard      | env KAFKA_BOOTSTRAP=broker:9092, ALERTS_TOPIC=alerts, POSTGRES_HOST=postgres | port 8501:8501
+  # ===== POZOSTALE SERWISY (odkomentuj, gdy gotowe) =====
+  # spark-hydro:  build: ./spark-hydro  | env KAFKA_BOOTSTRAP=broker:9092, SOURCE_TOPIC=hydro, ALERTS_TOPIC=alerts
+  # dashboard:    build: ./dashboard    | env KAFKA_BOOTSTRAP=broker:9092, ALERTS_TOPIC=alerts, POSTGRES_HOST=postgres | port 8501:8501
 
 volumes:
   kafka-data:
