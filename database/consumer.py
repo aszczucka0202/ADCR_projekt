@@ -1,3 +1,4 @@
+﻿import os
 import json
 from dateutil.parser import parse  # pip install python-dateutil
 from confluent_kafka import Consumer, KafkaError
@@ -7,7 +8,7 @@ from models import init_db, SessionLocal, HydroMeasurement, SynopMeasurement, Al
 
 def create_kafka_consumer():
     config = {
-        'bootstrap.servers': 'localhost:29092',
+        'bootstrap.servers': os.environ.get('KAFKA_BOOTSTRAP', 'localhost:29092'),
         'group.id': 'storage-and-ml-group',
         'auto.offset.reset': 'earliest'
     }
@@ -21,7 +22,7 @@ def main():
     consumer = create_kafka_consumer()
     db = SessionLocal()
 
-    print("Konsument Kafki uruchomiony. Oczekiwanie na wiadomości...")
+    print("Konsument Kafki uruchomiony. Oczekiwanie na wiadomoĹ›ci...")
 
     try:
         while True:
@@ -32,10 +33,10 @@ def main():
                 if msg.error().code() == KafkaError._PARTITION_EOF:
                     continue
                 else:
-                    print(f"Błąd Kafki: {msg.error()}")
+                    print(f"BĹ‚Ä…d Kafki: {msg.error()}")
                     break
 
-            # Dekodowanie wiadomości
+            # Dekodowanie wiadomoĹ›ci
             topic = msg.topic()
             payload = json.loads(msg.value().decode('utf-8'))
 
@@ -79,16 +80,16 @@ def main():
                 db.add(record)
                 db.commit()
                 print(
-                    f"Zapisano pomyślnie rekord z topiku {topic} dla stacji {payload.get('gauge_id') or payload.get('station_id')}")
+                    f"Zapisano pomyĹ›lnie rekord z topiku {topic} dla stacji {payload.get('gauge_id') or payload.get('station_id')}")
 
             except IntegrityError:
-                # Obsługa duplikatu (UniqueConstraint zablokował insert)
+                # ObsĹ‚uga duplikatu (UniqueConstraint zablokowaĹ‚ insert)
                 db.rollback()
                 print(
                     f"Zignorowano duplikat dla stacji {payload.get('gauge_id') or payload.get('station_id')} z czasu {payload['measurement_timestamp']}")
             except Exception as e:
                 db.rollback()
-                print(f"Błąd przetwarzania wiadomości: {e}")
+                print(f"BĹ‚Ä…d przetwarzania wiadomoĹ›ci: {e}")
 
     except KeyboardInterrupt:
         print("Zamykanie konsumenta...")

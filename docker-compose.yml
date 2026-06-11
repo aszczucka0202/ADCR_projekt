@@ -123,7 +123,26 @@ services:
       ALERTS_TOPIC: alerts
       STATIONS_CSV: /app/stations_hydro.csv
     restart: unless-stopped
+  database:
+    build: ./database
+    container_name: database
+    command: ["python", "-u", "consumer.py"]
+    depends_on:
+      broker:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP: broker:9092
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-rta}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rta_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-rta_db}
+    restart: unless-stopped
 volumes:
   kafka-data:
   postgres-data:
+
 
