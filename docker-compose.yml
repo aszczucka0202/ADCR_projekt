@@ -141,8 +141,29 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rta_pass}
       POSTGRES_DB: ${POSTGRES_DB:-rta_db}
     restart: unless-stopped
+  dashboard:
+    build: ./dashboard
+    container_name: dashboard
+    depends_on:
+      broker:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP: broker:9092
+      ALERTS_TOPIC: alerts
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-rta}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rta_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-rta_db}
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
 volumes:
   kafka-data:
   postgres-data:
+
 
 
